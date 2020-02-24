@@ -194,6 +194,13 @@ table(new_types)
 
 ```
 
+A question came up during the manuscript writing about which species have individuals decline
+and an explanation for sufficiency (shown in Table 2 of the ms.). That can be found with:
+
+```{r}
+filter(ind_dec, reason_lower_N_ind == "Yes" & ind_qual == 1)$Scientific_Name
+```
+
 ## Proportions for recovery
 
 We can calculate the proportion of individuals / populations required at 
@@ -419,6 +426,13 @@ in the recovery plans.
 table(filt$resiliency)
 table(filt$redundancy)
 table(filt$representation)
+
+filt$any_3R <- ifelse(filt$resiliency == "No" &
+                        filt$redundancy == "No" &
+                        filt$representation == "No",
+                      "No",
+                      "Yes")
+table(filt$any_3R)
 
 table(filt$resiliency, 
       filt$redundancy, 
