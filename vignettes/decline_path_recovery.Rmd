@@ -1,0 +1,605 @@
+---
+title: "Decline on the Path to Recovery: Analysis"
+author: "Li, Y-W, JW Malcom, JP Che-Castaldo, and MC Neel"
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+
+<!--   rmarkdown::word_document: -->
+<!--     toc: true -->
+<!--     toc_depth: 3 -->
+<!-- vignette: > -->
+<!--   %\VignetteIndexEntry{Vignette Title} -->
+<!--   %\VignetteEngine{knitr::rmarkdown} -->
+<!--   %\VignetteEncoding{UTF-8} -->
+
+
+## Introduction
+
+This vignette covers the analysis of data on Endangered Species Act-listed 
+species whose populations (number of populations or number of individuals) can
+decline--relative to the population at time of listing and/or time of recovery
+plan writing--and still be considered 'recovered.' A manuscript is in 
+preparation.
+
+```{r setup, include = FALSE}
+library(dplyr)
+library(decline.recovery)
+library(ggplot2)
+library(ggthemes)
+library(stringr)
+
+data("decline_recovery_final")
+dat <- decline_recovery_final
+rm(decline_recovery_final)
+
+dat$Taxon <- gsub(dat$Taxon, pattern = "BIRD", replacement = "Bird")
+dat$Taxon <- gsub(dat$Taxon, pattern = "FISH", replacement = "Fish")
+dat$Taxon <- gsub(dat$Taxon, pattern = "MAMMAL", replacement = "Mammal")
+dat$Taxon <- gsub(dat$Taxon, pattern = "REPTILE", replacement = "Reptile")
+
+all_plans_years <- readRDS("../data-raw/recplan_by_year.rds")
+names(all_plans_years) <- c("year", "n_all")
+```
+
+## Data filtering
+
+We need to first filter out the species without a decline on the path to recovery. 
+This includes one manual removal, Lake Erie water snake (_Nerodia sipedon 
+insularum_), because a more refined read that suggests it doesn't qualify.
+
+```{r filter}
+filt <- filter(dat, !is.na(reason_lower_N_pop) |
+                    !is.na(reason_lower_N_pop_sufficient) |
+                    !is.na(reason_lower_N_ind) |
+                    !is.na(reason_lower_N_ind_sufficient))
+filt <- filter(filt, Scientific_Name != "Nerodia sipedon insularum")
+dim(filt)
+
+filt$pop_list2rec <- filt$N_pops_req_recovery / filt$N_pops_at_listing
+filt$pop_plan2rec <- filt$N_pops_req_recovery / filt$N_pops_at_plan
+filt$ind_list2rec <- filt$N_ind_req_recovery / filt$N_ind_at_listing
+filt$ind_plan2rec <- filt$N_ind_req_recovery / filt$N_ind_at_plan
+
+ind_lis <- filter(filt, filt$ind_list2rec < 1)
+ind_pln <- filter(filt, filt$ind_plan2rec < 1)
+pop_pln <- filter(filt, filt$pop_plan2rec < 1)
+pop_lis <- filter(filt, filt$pop_list2rec < 1)
+pop_lis_pln <- filter(filt, filt$pop_list2rec < 1 & filt$pop_plan2rec < 1)
+ind_lis_pln <- filter(filt, filt$ind_list2rec < 1 & filt$ind_plan2rec < 1)
+lis_pop_ind <- filter(filt, filt$pop_list2rec < 1 & filt$ind_list2rec < 1)
+pln_pop_ind <- filter(filt, filt$ind_plan2rec < 1 & filt$pop_plan2rec < 1)
+popind_lispln <- filter(filt, filt$ind_list2rec < 1 & 
+                          filt$ind_plan2rec < 1 & 
+                          filt$pop_list2rec < 1 & 
+                          filt$pop_plan2rec < 1)
+
+filt$pop_qual <- NA
+for(i in 1:length(filt$pop_list2rec)) {
+  if(is.na(filt$pop_list2rec[i]) & is.na(filt$pop_plan2rec[i])) {
+    filt$pop_qual[i] <- NA
+  } else if(is.na(filt$pop_list2rec[i]) & filt$pop_plan2rec[i] < 1) {
+    filt$pop_qual[i] <- 1
+  } else if(is.na(filt$pop_plan2rec[i]) & filt$pop_list2rec[i] < 1) {
+    filt$pop_qual[i] <- 1
+  } else if(is.na(filt$pop_list2rec[i]) & filt$pop_plan2rec[i] >= 1) {
+    filt$pop_qual[i] <- 0
+  } else if(is.na(filt$pop_plan2rec[i]) & filt$pop_list2rec[i] >= 1) {
+    filt$pop_qual[i] <- 0
+  } else if(filt$pop_plan2rec[i] < 1 | filt$pop_list2rec[i] < 1) {
+    filt$pop_qual[i] <- 1
+  } else {
+    filt$pop_qual[i] <- 0
+  }
+}
+
+filt$ind_qual <- NA
+for(i in 1:length(filt$ind_list2rec)) {
+  if(is.na(filt$ind_list2rec[i]) & is.na(filt$ind_plan2rec[i])) {
+    filt$ind_qual[i] <- NA
+  } else if(is.na(filt$ind_list2rec[i]) & filt$ind_plan2rec[i] < 1) {
+    filt$ind_qual[i] <- 1
+  } else if(is.na(filt$ind_plan2rec[i]) & filt$ind_list2rec[i] < 1) {
+    filt$ind_qual[i] <- 1
+  } else if(is.na(filt$ind_list2rec[i]) & filt$ind_plan2rec[i] >= 1) {
+    filt$ind_qual[i] <- 0
+  } else if(is.na(filt$ind_plan2rec[i]) & filt$ind_list2rec[i] >= 1) {
+    filt$ind_qual[i] <- 0
+  } else if(filt$ind_plan2rec[i] < 1 | filt$ind_list2rec[i] < 1) {
+    filt$ind_qual[i] <- 1
+  } else {
+    filt$ind_qual[i] <- 0
+  }
+}
+
+table(filt$pop_qual, useNA = "always")
+table(filt$ind_qual, useNA = "always")
+
+table(filt$pop_qual, filt$ind_qual,
+      useNA = "always",
+      dnn = c("Pop.", "Indiv."))
+
+```
+
+`r dim(dat)[1] - dim(filt)[1]` species dropped seems about right...which species?
+
+```{r dropped}
+drop <- setdiff(dat$Scientific_Name, filt$Scientific_Name)
+drop
+```
+
+## Types of decline
+
+```{r type_decline}
+type_decl <- gsub(
+  filt$Type_of_metric_with_decline,
+  pattern = "#Ind",
+  replacement = "# Ind"
+)
+
+type_decl <- gsub(
+  type_decl,
+  pattern = "#Pop",
+  replacement = "# Pop"
+)
+
+type_decl <- gsub(
+  type_decl,
+  pattern = "writing,",
+  replacement = "writing;"
+)
+
+type_decl <- gsub(
+  type_decl,
+  pattern = "listing vs delisting",
+  replacement = "from listing"
+)
+
+type_decl <- gsub(
+  type_decl,
+  pattern = "Indv ",
+  replacement = "Indivs "
+)
+
+type_decl <- gsub(
+  type_decl,
+  pattern = "Pops-",
+  replacement = "Pops -"
+)
+
+types <- unlist(strsplit(type_decl, split = "; "))
+table(types)
+
+filt$Type_of_metric_with_decline <- type_decl
+table(filt$Type_of_metric_with_decline)
+
+
+new_types <- ifelse(
+  grepl(type_decl, pattern = "Indivs") & grepl(type_decl, pattern = "Pop"), 
+  "Ind & Pop",
+  ifelse(grepl(type_decl, pattern = "Indivs"), "Ind", "Pop")
+  ) 
+table(new_types)
+
+```
+
+## Proportions for recovery
+
+We can calculate the proportion of individuals / populations required at 
+recovery, relative to the numbers at listing and plan writing.
+
+```{r proportions}
+filt$prop_ind_at_listing <- filt$N_ind_req_recovery / filt$N_ind_at_listing
+filt$prop_ind_at_plan <- filt$N_ind_req_recovery / filt$N_ind_at_plan
+filt$prop_pop_at_listing <- filt$N_pops_req_recovery / filt$N_pops_at_listing
+filt$prop_pop_at_plan <- filt$N_pops_req_recovery / filt$N_pops_at_plan
+
+summary(filt$prop_ind_at_listing)
+summary(filt$prop_ind_at_plan)
+summary(filt$prop_pop_at_listing)
+summary(filt$prop_pop_at_plan)
+
+props <- data_frame(
+  proportions = c(
+    filt$prop_ind_at_listing,
+    filt$prop_ind_at_plan,
+    filt$prop_pop_at_listing,
+    filt$prop_pop_at_plan
+  ),
+  demography = c(
+    rep("Individuals", 2 * length(filt$prop_ind_at_listing)),
+    rep("Populations", 2 * length(filt$prop_ind_at_listing))
+  ),
+  timing = c(
+    rep("Listing", length(filt$prop_ind_at_listing)),
+    rep("Plan Writing", length(filt$prop_ind_at_listing)),
+    rep("Listing", length(filt$prop_ind_at_listing)),
+    rep("Plan Writing", length(filt$prop_ind_at_listing))
+  )
+)
+
+ggplot(data = props, aes(proportions)) +
+  geom_rect(aes(xmin = 0, xmax = 1, ymin = 0, ymax = Inf),
+            fill = "pink", alpha = 0.03) +
+  geom_histogram() +
+  scale_x_log10(breaks = c(0, 0.1, 1, 10, 100)) +
+  labs(x = "Proportion (individuals or populations)", y = "Number of Species") +
+  theme_hc() +
+  facet_grid(timing ~ demography, scales = "free")
+```
+
+```{r taxo_dist}
+tdf <- table(filt$Taxon) %>% 
+  as.data.frame(stringsAsFactors = FALSE) %>%
+  arrange(-Freq) %>%
+  mutate(Var1=factor(Var1, levels=Var1))
+
+ggplot(data = tdf, aes(x = Var1, y = Freq)) +
+  geom_bar(stat = "identity") +
+  labs(x = "", y = "No. Species") +
+  theme_hc()
+```
+
+Even though we have `r dim(filt)[1]` species that decline in some way, many of
+these species also have substantial increases either in pops or individuals. 
+But the bulk of proportional changes are small, so zooming in a bit:
+
+```{r hist_zoom}
+par(mfrow = c(2,2))
+hist(filt$prop_ind_at_listing[filt$prop_ind_at_listing < 5], main = "")
+hist(filt$prop_ind_at_plan[filt$prop_ind_at_plan < 5], main = "")
+hist(filt$prop_pop_at_listing[filt$prop_pop_at_listing < 5], main = "")
+hist(filt$prop_pop_at_plan[filt$prop_pop_at_plan < 5], main = "")
+par(mfrow = c(1,1))
+```
+
+```{r prop_scatter}
+qplot(data = filt, 
+      x = prop_ind_at_listing, 
+      y = prop_ind_at_plan, 
+      geom = "point") +
+  theme_bw()
+
+qplot(data = filt, 
+      x = prop_pop_at_listing, 
+      y = prop_pop_at_plan, 
+      geom = "point") +
+  theme_bw()
+
+qplot(data = filt, 
+      x = prop_ind_at_listing, 
+      y = prop_pop_at_listing, 
+      geom = "point") +
+  theme_bw()
+
+qplot(data = filt, 
+      x = prop_ind_at_plan, 
+      y = prop_pop_at_plan, 
+      geom = "point") +
+  theme_bw()
+
+```
+
+The wide range of proportional values makes some of these graphs a little hard 
+to parse. But one thing that is clear is that the proportions relative to
+listing/plan writing are mostly independent.
+
+## Taxonomic groups
+
+Is there variation in the taxonomic groups represented, or how they qualify for
+'decline on the path to recovery'?
+
+```{r taxa}
+table(filt$Taxon)
+```
+
+We could do a chi-square test, but the taxonomic distribution is clearly not
+representative of listed species: plants (~50% of listed species) make up 
+82% of species that can decline in abundance and still be recovered.
+
+```{r taxa_2}
+df <- data_frame(species = rep(filt$Scientific_Name, 4),
+                 taxon = rep(filt$Taxon, 4),
+                 metric = c(rep("ind_list", length(filt$Taxon)),
+                            rep("ind_plan", length(filt$Taxon)),
+                            rep("pop_list", length(filt$Taxon)),
+                            rep("pop_plan", length(filt$Taxon))),
+                 prop = c(filt$prop_ind_at_listing,
+                          filt$prop_ind_at_plan,
+                          filt$prop_pop_at_listing,
+                          filt$prop_pop_at_plan))
+
+aggregate(df$prop ~ df$taxon, FUN = median)
+aggregate(df$prop ~ df$metric, FUN = median)
+```
+
+There's a lot of variation in median proportions between taxonomic groups and 
+the metric of decline (or rather, change from listing / plan writing). More
+interesting is the two-way breakdown:
+
+```{r taxa_3}
+combo_md <- aggregate(df$prop ~ df$metric + df$taxon, FUN = median)
+combo_n <- aggregate(df$prop ~ df$metric + df$taxon, 
+                     FUN = function(x) length(!is.na(x)))
+names(combo_md) <- c("metric", "taxon", "prop")
+names(combo_n) <- c("metric", "taxon", "N")
+combo <- full_join(combo_md, combo_n)
+combo
+```
+
+We can see that for most groups, the median proportion is < 1 for numbers of
+populations rather than for numbers of individuals. In fact, most median 
+proportions by taxon:metric are > 1, i.e., on 'average' the number of
+individuals goes up even if the species qualifies based on a decline in the
+number of populations. But we have to note that the sample size is pretty darn
+small for most taxon:metric combinations, which really limits inference.
+
+## Explanations of lower numbers
+
+```{r reasons_1}
+table(filt$reason_lower_N_pop, filt$reason_lower_N_pop_sufficient, useNA = "always")
+table(filt$reason_lower_N_ind, filt$reason_lower_N_ind_sufficient, useNA = "always")
+```
+
+Still have more Explicit + Implicit > Yes (explained)...which ones?
+
+```{r reason_mismatch}
+mm_pop <- filter(filt, reason_lower_N_pop == "No" & 
+                   reason_lower_N_pop_sufficient != "No")
+mm_pop$Scientific_Name
+
+mm_ind <- filter(filt, reason_lower_N_ind == "No" & 
+                   reason_lower_N_ind_sufficient != "No")
+mm_ind$Scientific_Name
+```
+
+~~~~It's unclear how the plan authors were able to suggest sufficiency of the 
+numbers without acknowledging the decline.~~~~
+
+How many plans had reasoning for both population- and individual-based numbers?
+
+```{r combination_pop_ind}
+twoway <- table(filt$reason_lower_N_pop, 
+      filt$reason_lower_N_ind, 
+      useNA = "always",
+      dnn = c("Pop.", "Indiv."))
+twoway
+```
+
+Only `r sum(twoway[1:2,1:2])` species qualified on both population- and individual-based numbers,
+and no species included a reason for both types of decline.
+
+How often was threat amelioration given as the reason the lower numbers were
+sufficient for recovery?
+
+```{r threat_amelior}
+table(filt$threat_amelior_suffic)
+```
+
+Even though FWS often gives threat amelioration as the reason numbers can decline
+and a species still be recovered, there's usually no mention of the idea and we
+never found the argument made explicitly in these plans.
+
+## Separate threats and demography criteria and actions?
+
+Recovery plans would ideally provide separate delisting criteria for demographic
+traits and for threats because doing so clarifies the reasons for listing and 
+path to delisting. In addition, we would like to see recovery actions explicitly
+described in terms of whether they are targeting demography or threats.
+
+```{r threat_demog}
+table(filt$threat_demog_explicit_criteria)
+table(filt$threat_demog_explicit_actions)
+
+table(filt$threat_demog_explicit_criteria, 
+      filt$threat_demog_explicit_actions,
+      dnn = c("criteria", "actions"))
+```
+
+## Three Rs
+
+The three Rs -  resiliency, redundancy, and representation - describe a 
+generally accepted principle of the requirements for recovery. It is particularly
+important that the species with a decline on the path to recovery ensure that
+each R is fulfilled. The first step in meeting the three Rs is discussing them
+in the recovery plans.
+
+```{r threeR}
+table(filt$resiliency)
+table(filt$redundancy)
+table(filt$representation)
+
+table(filt$resiliency, 
+      filt$redundancy, 
+      useNA = "always",
+      dnn = c("resil.", "redund."))
+table(filt$resiliency, 
+      filt$representation, 
+      useNA = "always",
+      dnn = c("resil.", "represent."))
+table(filt$redundancy, 
+      filt$representation, 
+      useNA = "always",
+      dnn = c("redund.", "represent."))
+```
+
+And now a three-way table, even though it is a little awkward:
+
+```{r threeway_threeR}
+table(filt$resiliency, 
+      filt$redundancy, 
+      filt$representation,
+      dnn = c("resil.", "redund.", "represent."))
+```
+
+No species' plan discussed all three Rs explicitly, but the majority (`r 11+76`)
+discuss each R at least implicitly and only seven species' plans do not address 
+any of the Rs.
+
+## Science of decline
+
+That is, models used? (Note that some plans use a combination of model types.)
+
+```{r models}
+# First some additional text cleaning
+mods <- filt$pop_models
+mods <- str_replace_all(mods, "verbal", "Verbal")
+mods <- str_replace_all(mods, "models|[Mm]odel", "")
+mods <- str_replace_all(mods, "literature", "Literature")
+mods <- str_replace_all(mods, "references|reference", "")
+mods <- str_replace_all(mods, " $", "")
+mod2 <- str_split(mods, " & ")
+mod3 <- str_replace_all(unlist(mod2), " $", "")
+table(unlist(mod3))
+```
+
+## Plan years
+
+```{r plan_year}
+qp <- qplot(filt$plan_year, geom = "histogram", bins = 32) + 
+  labs(x = "Plan Year", y = "# Species") +
+  theme_hc()
+qp
+# plotly::ggplotly(qp)
+
+hist(filt$plan_year, breaks = 4, plot = FALSE)
+# hist(filt$plan_year, breaks = 4)
+
+dec_year <- table(filt$plan_year) %>% as.data.frame(stringsAsFactors = FALSE)
+names(dec_year) <- c("year", "decline_n")
+combo <- left_join(dec_year, all_plans_years, by = "year") %>%
+  mutate(prop_decline = decline_n / n_all)
+combo$year <- as.numeric(combo$year)
+
+ggplot(combo, aes(x = year, y = prop_decline)) +
+# qplot(data = combo, x = year, y = prop_decline, geom = "point") +
+  geom_point(size = 4) +
+  labs(x = "", y = "Proportion of Plans with Decline") +
+  theme_hc()
+  
+```
+
+### Changes through time
+
+Now to break some measures down by block of time...
+
+```{r thru_time}
+filt$yr_block <- ifelse(
+  filt$plan_year < 1990,
+  1,
+  ifelse(
+    filt$plan_year < 2000,
+    2,
+    ifelse(
+      filt$plan_year < 2010,
+      3,
+      4
+    )
+  )
+)
+```
+
+The following get the numbers we need, but it's unclear how we illustrate
+any of the interesting changes. Perhaps the good news (for me) is that there
+are relatively few interesting results that might be considered 
+interesting...most are tenuous at best because of the concentration of plans
+from the 1990s.
+
+#### No real change through time:
+
+```{r}
+tapply(filt$reason_lower_N_ind,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### Appears to shift towards 'yes', but tough to tell:
+
+```{r}
+tapply(filt$reason_lower_N_pop,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### No obvious shift:
+
+```{r}
+tapply(filt$reason_lower_N_ind_sufficient,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### Maybe a shift away from No:
+
+```{r}
+tapply(filt$reason_lower_N_pop_sufficient,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### Maybe a shift from No:
+
+```{r}
+tapply(filt$resiliency,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### Shift away from No:
+
+```{r}
+tapply(filt$redundancy,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+
+#### Less of a shift for representation:
+
+```{r}
+tapply(filt$representation,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### No strong shift:
+
+```{r}
+tapply(filt$threat_amelior_suffic,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### Looks like a shift away from combined threats & demography:
+
+```{r}
+tapply(filt$threat_demog_explicit_criteria,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+#### No change:
+
+```{r}
+tapply(filt$threat_demog_explicit_actions,
+       INDEX = filt$yr_block,
+       FUN = table)
+```
+
+## Conclusions
+
+...
+
+
+

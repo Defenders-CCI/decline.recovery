@@ -1,0 +1,19 @@
+Package: decline.recovery
+Type: Package
+Title: Data and Analysis Package for Li et al. 2020
+Version: 1.0.0
+Author: Li, Y-W; JW Malcom; JP Che-Castaldo; MC Neel
+Maintainer: JW Malcom <jmalcom@defenders.org>
+Description: Data and analyses for the manuscript, Recovery plans need better 
+    science to support decisions that allow species to decline in abundance but 
+    be recovered.
+License: BSD2
+Encoding: UTF-8
+LazyData: true
+Suggests: dplyr,
+    ggplot2,
+    ggthemes,
+    knitr,
+    rmarkdown,
+    stringr
+VignetteBuilder: knitr
